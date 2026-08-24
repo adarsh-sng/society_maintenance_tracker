@@ -1,38 +1,70 @@
-import { SignJWT, jwtVerify, decodeJwt } from 'jose'
+import { SignJWT, jwtVerify } from 'jose'
 import { createSecretKey } from 'crypto'
-import env from '../../env.ts'
+import { env } from '../../env.ts'
 
 export interface JwtPayload {
-  id: number,
-  email: string,
-  username: string,
-  role: "CLIENT" | "ADMIN",
-  [key: string]: any
+  id: number
+  email: string
+  name: string
+  role: 'resident' | 'admin'
+  [key: string]: unknown
 }
 
+const getSecretKey = () => createSecretKey(env.JWT_SECRET, 'utf-8')
+
 export const generateToken = async (payload: JwtPayload): Promise<string> => {
-  const secret = env.JWT_SECRET
-  if (!secret) {
-    throw new Error('JWT_SECRET environment variable is not set')
-  }
-
-  const secretKey = createSecretKey(secret, 'utf-8')
-
-  return await new SignJWT(payload)
+  return await new SignJWT(payload as Record<string, unknown>)
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
-    .setExpirationTime(env.JWT_EXPIRES_IN || '7d')
-    .sign(secretKey)
+    .setExpirationTime(env.JWT_EXPIRES_IN)
+    .sign(getSecretKey())
 }
 
 export const verifyToken = async (token: string): Promise<JwtPayload> => {
-  const secretKey = createSecretKey(env.JWT_SECRET, 'utf-8')
-  const { payload } = await jwtVerify(token, secretKey)
-
+  const { payload } = await jwtVerify(token, getSecretKey())
   return {
     id: payload.id as number,
     email: payload.email as string,
-    username: payload.username as string,
-    role: payload.role as "CLIENT" | "ADMIN",
+    name: payload.name as string,
+    role: payload.role as 'resident' | 'admin',
   }
+}
+
+export const decodeToken = (token: string): JwtPayload | null => {
+  try {
+    const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString())
+    return {
+      id: payload.id,
+      email: payload.email,
+      name: payload.name,
+      role: payload.role,
+    }
+  } catch {
+    return null
+  }
+}
+
+export const setAuthCookie = (res: any, token: string) => {
+  const isProduction = env.NODE_ENV === 'production'
+  res.cookie(env.JWT_COOKIE_NAME, token, {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: isProduction ? 'none' : 'lax',
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    path: '/',
+  })
+}
+
+export const clearAuthCookie = (res: any) => {
+  const isProduction = env.NODE_ENV === 'production'
+  res.clearCookie(env.JWT_COOKIE_NAME, {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: isProduction ? 'none' : 'lax',
+    path: '/',
+  })
+}
+
+export const getTokenFromCookie = (req: any): string | undefined => {
+  return req.cookies?.[env.JWT_COOKIE_NAME]
 }

@@ -1,17 +1,17 @@
 import type { Request, Response, NextFunction } from 'express'
-import { verifyToken, type JwtPayload } from '../utils/jwt.ts'
+import { verifyToken, getTokenFromCookie, type JwtPayload } from '../utils/jwt.ts'
 
 export interface AuthenticatedRequest extends Request {
   user?: JwtPayload
 }
+
 export const authenticateToken = async (
   req: AuthenticatedRequest,
   res: Response,
   next: NextFunction
 ) => {
   try {
-    const authHeader = req.headers.authorization 
-    const token = authHeader && authHeader.split(' ')[1] // Bearer TOKEN
+    const token = getTokenFromCookie(req)
 
     if (!token) {
       return res.status(401).json({ error: 'Access token required' })
@@ -25,20 +25,33 @@ export const authenticateToken = async (
   }
 }
 
-
 export const requireAdmin = (
   req: AuthenticatedRequest,
   res: Response,
   next: NextFunction
 ) => {
-
   if (!req.user) {
     return res.status(401).json({ error: 'Unauthorized: User not found' })
   }
 
-
-  if (req.user.role !== 'ADMIN') {
+  if (req.user.role !== 'admin') {
     return res.status(403).json({ error: 'Forbidden: Admin access required' })
+  }
+
+  next()
+}
+
+export const requireResident = (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+) => {
+  if (!req.user) {
+    return res.status(401).json({ error: 'Unauthorized: User not found' })
+  }
+
+  if (req.user.role !== 'resident') {
+    return res.status(403).json({ error: 'Forbidden: Resident access required' })
   }
 
   next()
