@@ -1,195 +1,141 @@
 import { db } from "./connection.ts";
-import * as schema from "./schema.ts"; 
+import * as schema from "./schema.ts";
 import { eq } from "drizzle-orm";
 
 async function seed() {
-  console.log("🌱 Starting database seed...");
+  console.log("🌱 Starting Society Maintenance Tracker seed...");
 
   try {
-    // 1. Clear existing data (Order matters! Delete children first to avoid FK errors)
     console.log("🧹 Clearing existing data...");
-    await db.delete(schema.userSignals);
-    await db.delete(schema.standupRecurringTasks);
-    await db.delete(schema.standups);
-    await db.delete(schema.recurringTasks);
-    await db.delete(schema.signals);
+    await db.delete(schema.complaintHistory);
+    await db.delete(schema.complaints);
+    await db.delete(schema.notices);
     await db.delete(schema.users);
 
-    console.log("👤 Creating demo users...");
-    // Note: In a real app, use a real hashing function like bcrypt/argon2
-    const passwordHash = "super_secret_hashed_password_123"; 
+    console.log("👤 Creating users (Residents and Admins)...");
+    const passwordHash = "super_secret_hashed_password_123";
 
-    const [demoUser] = await db
+    const [adminUser] = await db
       .insert(schema.users)
       .values({
-        name: "Demo User",
-        email: "demo@standups.com",
-        passwordHash: passwordHash,
+        name: "Society Admin",
+        email: "admin@society.com",
+        passwordHash,
+        role: "admin",
       })
       .returning();
 
-    const [alice] = await db
+    const [residentOne] = await db
       .insert(schema.users)
       .values({
-        name: "Alice Engineer",
-        email: "alice@example.com",
-        passwordHash: passwordHash,
+        name: "Alice Resident",
+        email: "alice@society.com",
+        passwordHash,
+        role: "resident",
       })
       .returning();
 
-    // 3. Create Signals (Reference Data)
-    console.log("📡 Creating signals...");
-    const [githubSignal] = await db
-      .insert(schema.signals)
+    const [residentTwo] = await db
+      .insert(schema.users)
       .values({
-        name: "GitHub",
-        api: "https://api.github.com",
-        metric: "commits_pushed",
-        type: "vcs",
+        name: "Bob Resident",
+        email: "bob@society.com",
+        passwordHash,
+        role: "resident",
       })
       .returning();
 
-    const [jiraSignal] = await db
-      .insert(schema.signals)
+    console.log("📢 Creating notices...");
+    await db.insert(schema.notices).values([
+      {
+        content: "Water supply will be interrupted on Friday from 10 AM to 2 PM.",
+        isImportant: true,
+      },
+      {
+        content: "The annual society meeting is scheduled for next month.",
+        isImportant: false,
+      },
+    ]);
+
+    console.log("📝 Creating complaints...");
+    const [complaintOne] = await db
+      .insert(schema.complaints)
       .values({
-        name: "Jira",
-        api: "https://jira.atlassian.com",
-        metric: "tickets_closed",
-        type: "pm",
+        residentId: residentOne.id,
+        category: "Plumbing",
+        description: "Kitchen sink is leaking profusely.",
+        photoUrl: "https://example.com/leaking-sink.jpg",
+        status: "Resolved",
+        priority: "High",
       })
       .returning();
 
-    const [linearSignal] = await db
-      .insert(schema.signals)
+    const [complaintTwo] = await db
+      .insert(schema.complaints)
       .values({
-        name: "Linear",
-        api: "https://api.linear.app",
-        metric: "issues_completed",
-        type: "pm",
+        residentId: residentTwo.id,
+        category: "Electrical",
+        description: "Hallway lights on the 3rd floor are flickering.",
+        status: "In Progress",
+        priority: "Medium",
+        isOverdue: true,
       })
       .returning();
 
-    // 4. Create Recurring Tasks for Demo User
-    console.log("🔁 Creating recurring tasks...");
-    const [checkSentry] = await db
-      .insert(schema.recurringTasks)
+    const [complaintThree] = await db
+      .insert(schema.complaints)
       .values({
-        userId: demoUser.id,
-        name: "Check Sentry for new errors",
+        residentId: residentOne.id,
+        category: "Carpentry",
+        description: "Main door hinge is broken.",
+        status: "Open",
+        priority: "Low",
       })
       .returning();
 
-    const [updateDocs] = await db
-      .insert(schema.recurringTasks)
-      .values({
-        userId: demoUser.id,
-        name: "Update API documentation",
-      })
-      .returning();
+    console.log("📜 Creating complaint history log...");
+    const twoDaysAgo = new Date();
+    twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
 
-    // 5. Create Standups (Simulate history)
-    console.log("📝 Creating standup history...");
-    const today = new Date();
-    
-    // Standup 1: Today
-    const [todayStandup] = await db
-      .insert(schema.standups)
-      .values({
-        userId: demoUser.id,
-        date: today,
-        mood: "confident",
-        notes: "Finally cracked the difficult migration bug.",
-        yesterdayTaskCompleted: true,
-        tomorrowGoals: ["Deploy to staging", "Write unit tests"], // Matches .$type<string[]>()
-      })
-      .returning();
-
-    // Standup 2: Yesterday
-    const yesterday = new Date(today);
+    const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
-    
-    const [yesterdayStandup] = await db
-      .insert(schema.standups)
-      .values({
-        userId: demoUser.id,
-        date: yesterday,
-        mood: "stressed",
-        notes: "Struggling with the database schema types.",
-        yesterdayTaskCompleted: false,
-        tomorrowGoals: ["Fix schema types", "Ask for help"],
-      })
-      .returning();
 
-    // 6. Link Recurring Tasks to Standups
-    console.log("🔗 Linking tasks...");
-    await db.insert(schema.standupRecurringTasks).values([
-      // Today: Completed both
+    await db.insert(schema.complaintHistory).values([
+      // History for Complaint One (Resolved)
       {
-        standupId: todayStandup.id,
-        recurringTaskId: checkSentry.id,
-        completed: true,
+        complaintId: complaintOne.id,
+        actorId: adminUser.id,
+        newStatus: "In Progress",
+        note: "Plumber dispatched.",
+        timestamp: twoDaysAgo,
       },
       {
-        standupId: todayStandup.id,
-        recurringTaskId: updateDocs.id,
-        completed: true,
+        complaintId: complaintOne.id,
+        actorId: adminUser.id,
+        newStatus: "Resolved",
+        note: "Pipe replaced.",
+        timestamp: yesterday,
       },
-      // Yesterday: Only checked Sentry
+      // History for Complaint Two (In Progress & Overdue)
       {
-        standupId: yesterdayStandup.id,
-        recurringTaskId: checkSentry.id,
-        completed: true,
-      },
-      {
-        standupId: yesterdayStandup.id,
-        recurringTaskId: updateDocs.id,
-        completed: false,
+        complaintId: complaintTwo.id,
+        actorId: adminUser.id,
+        newStatus: "In Progress",
+        note: "Electrician scheduled but delayed.",
+        timestamp: twoDaysAgo,
       },
     ]);
 
-    // 7. Link Signals to Standups
-    console.log("🔗 Linking signals...");
-    await db.insert(schema.userSignals).values([
-      // Today's Activity
-      {
-        standupId: todayStandup.id,
-        signalId: githubSignal.id,
-        activity: 12, // 12 commits
-      },
-      {
-        standupId: todayStandup.id,
-        signalId: linearSignal.id,
-        activity: 3, // 3 issues closed
-      },
-      // Yesterday's Activity
-      {
-        standupId: yesterdayStandup.id,
-        signalId: githubSignal.id,
-        activity: 4, 
-      },
-    ]);
-
-    // 8. Verification Query (The "Proof")
-    console.log("\n🔍 Testing relational queries...");
-    
-    const fullUser = await db.query.users.findFirst({
-      where: eq(schema.users.email, "demo@standups.com"),
+    console.log("\n🔍 Testing relational queries (Admin View)...");
+    const adminDashboardView = await db.query.complaints.findMany({
       with: {
-        recurringTasks: true,
-        standups: {
-          orderBy: (standups, { desc }) => [desc(standups.date)],
-          limit: 2,
+        resident: {
+          columns: { name: true, email: true },
+        },
+        history: {
+          orderBy: (history, { desc }) => [desc(history.timestamp)],
           with: {
-            standupRecurringTasks: {
-              with: {
-                recurringTask: true,
-              },
-            },
-            userSignals: {
-              with: {
-                signal: true,
-              },
-            },
+            actor: { columns: { name: true } },
           },
         },
       },
@@ -197,22 +143,14 @@ async function seed() {
 
     console.log("✅ Database seeded successfully!");
     console.log("\n📊 Seed Summary:");
-    console.log(`- Users created: 2`);
-    console.log(`- Signals defined: 3`);
-    console.log(`- Recurring Tasks for Demo: 2`);
-    console.log(`- Standups logged: ${fullUser?.standups.length}`);
-    
-    // Example of accessing the deep data
-    const latestStandup = fullUser?.standups[0];
-    const signalsCount = latestStandup?.userSignals.length || 0;
-    
-    console.log(`- Latest Standup Mood: ${latestStandup?.mood}`);
-    console.log(`- Signals attached to latest standup: ${signalsCount}`);
-    console.log(`- Tomorrow's Goals: ${latestStandup?.tomorrowGoals.join(", ")}`);
+    console.log(`- Users created: 3`);
+    console.log(`- Notices created: 2`);
+    console.log(`- Complaints logged: ${adminDashboardView.length}`);
+    console.log(`- Overdue Complaints: ${adminDashboardView.filter((c) => c.isOverdue).length}`);
 
     console.log("\n🔑 Login Credentials:");
-    console.log("Email: demo@standups.com");
-    console.log("Password: (Any string, logic handled in app)");
+    console.log("Admin: admin@society.com");
+    console.log("Resident: alice@society.com");
 
   } catch (error) {
     console.error("❌ Seed failed:", error);
@@ -220,7 +158,6 @@ async function seed() {
   }
 }
 
-// Run seed if this file is executed directly
 if (import.meta.url === `file://${process.argv[1]}`) {
   seed()
     .then(() => process.exit(0))
