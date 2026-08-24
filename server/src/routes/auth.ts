@@ -1,11 +1,12 @@
 import { Router } from 'express'
+import type { Request, Response } from 'express'
 import { db } from '../db/connection.ts'
 import * as schema from '../db/schema.ts'
 import { eq } from 'drizzle-orm'
 import { hashPassword, comparePassword } from '../utils/password.ts'
 import { generateToken, setAuthCookie, clearAuthCookie } from '../utils/jwt.ts'
 import { authenticateToken, type AuthenticatedRequest } from '../middleware/auth.ts'
-import { validateBody } from '../middleware/validation.ts'
+import { validateBody, getValidatedBody } from '../middleware/validation.ts'
 import { registerSchema, loginSchema } from '../validators/schemas.ts'
 
 const router = Router()
@@ -14,9 +15,13 @@ const router = Router()
 router.post(
   '/register',
   validateBody(registerSchema),
-  async (req: AuthenticatedRequest, res: Response) => {
+  async (req: Request, res: Response) => {
     try {
-      const { name, email, password } = req.body
+      const { name, email, password } = getValidatedBody<{
+        name: string
+        email: string
+        password: string
+      }>(res)
 
       const existingUser = await db
         .select()
@@ -38,7 +43,12 @@ router.post(
           passwordHash,
           role: 'resident',
         })
-        .returning({ id: schema.users.id, name: schema.users.name, email: schema.users.email, role: schema.users.role })
+        .returning({
+          id: schema.users.id,
+          name: schema.users.name,
+          email: schema.users.email,
+          role: schema.users.role,
+        })
 
       const token = await generateToken({
         id: user.id,
@@ -51,7 +61,7 @@ router.post(
 
       res.status(201).json({
         message: 'Registration successful',
-        user: { id: user.id, name: user.name, email: user.email, role: user.role },
+        user,
       })
     } catch (error) {
       console.error('Registration error:', error)
@@ -64,9 +74,9 @@ router.post(
 router.post(
   '/login',
   validateBody(loginSchema),
-  async (req: AuthenticatedRequest, res: Response) => {
+  async (req: Request, res: Response) => {
     try {
-      const { email, password } = req.body
+      const { email, password } = getValidatedBody<{ email: string; password: string }>(res)
 
       const [user] = await db
         .select()
@@ -104,35 +114,39 @@ router.post(
 )
 
 // POST /api/auth/logout - Logout
-router.post('/logout', (req: AuthenticatedRequest, res: Response) => {
+router.post('/logout', (_req: Request, res: Response) => {
   clearAuthCookie(res)
   res.json({ message: 'Logged out successfully' })
 })
 
 // GET /api/auth/me - Get current user
-router.get('/me', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const [user] = await db
-      .select({
-        id: schema.users.id,
-        name: schema.users.name,
-        email: schema.users.email,
-        role: schema.users.role,
-        createdAt: schema.users.createdAt,
-      })
-      .from(schema.users)
-      .where(eq(schema.users.id, req.user!.id))
-      .limit(1)
+router.get(
+  '/me',
+  authenticateToken,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const [user] = await db
+        .select({
+          id: schema.users.id,
+          name: schema.users.name,
+          email: schema.users.email,
+          role: schema.users.role,
+          createdAt: schema.users.createdAt,
+        })
+        .from(schema.users)
+        .where(eq(schema.users.id, req.user!.id))
+        .limit(1)
 
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' })
+      if (!user) {
+        return res.status(404).json({ error: 'User not found' })
+      }
+
+      res.json({ user })
+    } catch (error) {
+      console.error('Get me error:', error)
+      res.status(500).json({ error: 'Failed to get user' })
     }
-
-    res.json({ user })
-  } catch (error) {
-    console.error('Get me error:', error)
-    res.status(500).json({ error: 'Failed to get user' })
   }
-})
+)
 
 export default router

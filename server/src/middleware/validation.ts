@@ -1,10 +1,20 @@
 import type { Request, Response, NextFunction } from 'express'
 import { ZodError, ZodType } from 'zod'
 
-export const validateBody = (schema: ZodType) => {
-  return (req: Request, res: Response, next: NextFunction) => {
+/**
+ * Validation middleware stores the parsed (coerced + defaulted) value on
+ * res.locals — Express 5 regenerates req.query per access, so writing back
+ * to it is unreliable. Handlers should read from getValidated* helpers below.
+ */
+export const getValidatedBody = <T>(res: Response): T => res.locals.validatedBody as T
+export const getValidatedQuery = <T>(res: Response): T => res.locals.validatedQuery as T
+export const getValidatedParams = <T>(res: Response): T => res.locals.validatedParams as T
+
+export const validateBody =
+  (schema: ZodType) =>
+  (req: Request, res: Response, next: NextFunction) => {
     try {
-      schema.parse(req.body)
+      res.locals.validatedBody = schema.parse(req.body)
       next()
     } catch (error) {
       if (error instanceof ZodError) {
@@ -19,12 +29,12 @@ export const validateBody = (schema: ZodType) => {
       next(error)
     }
   }
-}
 
-export const validateParams = (schema: ZodType) => {
-  return (req: Request, res: Response, next: NextFunction) => {
+export const validateParams =
+  (schema: ZodType) =>
+  (req: Request, res: Response, next: NextFunction) => {
     try {
-      schema.parse(req.params)
+      res.locals.validatedParams = schema.parse(req.params)
       next()
     } catch (error) {
       if (error instanceof ZodError) {
@@ -39,12 +49,12 @@ export const validateParams = (schema: ZodType) => {
       next(error)
     }
   }
-}
 
-export const validateQuery = (schema: ZodType) => {
-  return (req: Request, res: Response, next: NextFunction) => {
+export const validateQuery =
+  (schema: ZodType) =>
+  (req: Request, res: Response, next: NextFunction) => {
     try {
-      schema.parse(req.query)
+      res.locals.validatedQuery = schema.parse(req.query)
       next()
     } catch (error) {
       if (error instanceof ZodError) {
@@ -59,4 +69,3 @@ export const validateQuery = (schema: ZodType) => {
       next(error)
     }
   }
-}

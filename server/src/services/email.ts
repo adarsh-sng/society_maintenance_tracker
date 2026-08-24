@@ -81,7 +81,7 @@ export const sendEmail = async (
       console.log(`📧 Email preview: ${previewUrl}`)
     }
 
-    return { success: true, previewUrl }
+    return { success: true, previewUrl: previewUrl || undefined }
   } catch (error) {
     console.error('❌ Email send failed:', error)
     return { success: false, error: error instanceof Error ? error.message : 'Unknown error' }

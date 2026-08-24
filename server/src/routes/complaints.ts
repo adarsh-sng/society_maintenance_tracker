@@ -1,16 +1,17 @@
 import { Router } from 'express'
+import type { Request, Response } from 'express'
 import { db } from '../db/connection.ts'
 import * as schema from '../db/schema.ts'
-import { eq, desc, and, gte, lte, ilike } from 'drizzle-orm'
+import { eq, desc, and, gte, lte } from 'drizzle-orm'
+import { count } from 'drizzle-orm'
 import { authenticateToken, requireResident, type AuthenticatedRequest } from '../middleware/auth.ts'
-import { validateBody, validateParams, validateQuery } from '../middleware/validation.ts'
+import { validateBody, validateParams, validateQuery, getValidatedBody, getValidatedQuery } from '../middleware/validation.ts'
 import {
   createComplaintSchema,
   complaintParamsSchema,
   complaintQuerySchema,
 } from '../validators/schemas.ts'
 import { upload, getFileUrl } from '../utils/upload.ts'
-import { sendComplaintStatusEmail } from '../services/email.ts'
 
 const router = Router()
 
@@ -23,7 +24,10 @@ router.post(
   validateBody(createComplaintSchema),
   async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const { category, description } = req.body
+      const { category, description } = getValidatedBody<{
+        category: string
+        description: string
+      }>(res)
       const residentId = req.user!.id
 
       let photoUrl: string | undefined
@@ -84,28 +88,36 @@ router.get(
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       const residentId = req.user!.id
-      const { page, limit, status, category, startDate, endDate } = req.query
+      const query = getValidatedQuery<{
+        page: number
+        limit: number
+        status?: 'Open' | 'In Progress' | 'Resolved'
+        category?: string
+        startDate?: string
+        endDate?: string
+      }>(res)
 
       const conditions = [eq(schema.complaints.residentId, residentId)]
 
-      if (status) {
-        conditions.push(eq(schema.complaints.status, status))
+      if (query.status) {
+        conditions.push(eq(schema.complaints.status, query.status))
       }
-      if (category) {
-        conditions.push(ilike(schema.complaints.category, `%${category}%`))
+      if (query.category) {
+        conditions.push(eq(schema.complaints.category, query.category))
       }
-      if (startDate) {
-        conditions.push(gte(schema.complaints.createdAt, new Date(startDate)))
+      if (query.startDate) {
+        conditions.push(gte(schema.complaints.createdAt, new Date(query.startDate)))
       }
-      if (endDate) {
-        conditions.push(lte(schema.complaints.createdAt, new Date(endDate)))
+      if (query.endDate) {
+        conditions.push(lte(schema.complaints.createdAt, new Date(query.endDate)))
       }
 
-      const offset = (page - 1) * limit
+      const where = and(...conditions)
+      const offset = (query.page - 1) * query.limit
 
       const [complaints, totalResult] = await Promise.all([
         db.query.complaints.findMany({
-          where: and(...conditions),
+          where,
           with: {
             resident: { columns: { name: true, email: true } },
             history: {
@@ -114,24 +126,21 @@ router.get(
             },
           },
           orderBy: (complaints, { desc }) => [desc(complaints.createdAt)],
-          limit,
+          limit: query.limit,
           offset,
         }),
-        db
-          .select({ count: schema.complaints.id })
-          .from(schema.complaints)
-          .where(and(...conditions)),
+        db.select({ value: count() }).from(schema.complaints).where(where),
       ])
 
-      const total = totalResult.length
+      const total = totalResult[0]?.value ?? 0
 
       res.json({
         complaints,
         pagination: {
-          page,
-          limit,
+          page: query.page,
+          limit: query.limit,
           total,
-          totalPages: Math.ceil(total / limit),
+          totalPages: Math.ceil(total / query.limit),
         },
       })
     } catch (error) {

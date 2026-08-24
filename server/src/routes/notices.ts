@@ -1,12 +1,19 @@
 import { Router } from 'express'
+import type { Request, Response } from 'express'
 import { db } from '../db/connection.ts'
 import * as schema from '../db/schema.ts'
-import { eq, desc, and } from 'drizzle-orm'
+import { eq, desc, count } from 'drizzle-orm'
 import { authenticateToken, requireAdmin, type AuthenticatedRequest } from '../middleware/auth.ts'
-import { validateBody, validateParams, validateQuery } from '../middleware/validation.ts'
+import {
+  validateBody,
+  validateParams,
+  validateQuery,
+  getValidatedBody,
+  getValidatedQuery,
+} from '../middleware/validation.ts'
 import {
   createNoticeSchema,
-  updateNoticeSchema,
+  updateNoticeBodySchema,
   noticeParamsSchema,
   noticeQuerySchema,
 } from '../validators/schemas.ts'
@@ -14,33 +21,47 @@ import { sendImportantNoticeEmail } from '../services/email.ts'
 
 const router = Router()
 
+const notifyResidentsOfImportantNotice = async (content: string): Promise<void> => {
+  const residents = await db
+    .select({ email: schema.users.email, name: schema.users.name })
+    .from(schema.users)
+    .where(eq(schema.users.role, 'resident'))
+
+  // Fire-and-forget: don't block the response on email delivery
+  for (const resident of residents) {
+    void sendImportantNoticeEmail(resident.email, resident.name, content).catch((err) =>
+      console.error('Notice email failed:', err)
+    )
+  }
+}
+
 // GET /api/notices - List all notices (Public, important pinned first)
 router.get(
   '/',
   validateQuery(noticeQuerySchema),
-  async (req: AuthenticatedRequest, res: Response) => {
+  async (req: Request, res: Response) => {
     try {
-      const { page, limit } = req.query
-      const offset = (page - 1) * limit
+      const query = getValidatedQuery<{ page: number; limit: number }>(res)
+      const offset = (query.page - 1) * query.limit
 
       const [notices, totalResult] = await Promise.all([
         db.query.notices.findMany({
-          orderBy: (notices, { desc }) => [desc(notices.isImportant), desc(notices.createdAt)],
-          limit,
+          orderBy: [desc(schema.notices.isImportant), desc(schema.notices.createdAt)],
+          limit: query.limit,
           offset,
         }),
-        db.select({ count: count() }).from(schema.notices),
+        db.select({ value: count() }).from(schema.notices),
       ])
 
-      const total = totalResult[0]?.count ?? 0
+      const total = totalResult[0]?.value ?? 0
 
       res.json({
         notices,
         pagination: {
-          page,
-          limit,
+          page: query.page,
+          limit: query.limit,
           total,
-          totalPages: Math.ceil(total / limit),
+          totalPages: Math.ceil(total / query.limit),
         },
       })
     } catch (error) {
@@ -54,14 +75,15 @@ router.get(
 router.get(
   '/:id',
   validateParams(noticeParamsSchema),
-  async (req: AuthenticatedRequest, res: Response) => {
+  async (req: Request, res: Response) => {
     try {
       const noticeId = Number(req.params.id)
 
-      const [notice] = await db.query.notices.findMany({
-        where: eq(schema.notices.id, noticeId),
-        limit: 1,
-      })
+      const [notice] = await db
+        .select()
+        .from(schema.notices)
+        .where(eq(schema.notices.id, noticeId))
+        .limit(1)
 
       if (!notice) {
         return res.status(404).json({ error: 'Notice not found' })
@@ -81,25 +103,17 @@ router.post(
   authenticateToken,
   requireAdmin,
   validateBody(createNoticeSchema),
-  async (req: AuthenticatedRequest, res: Response) => {
+  async (req: Request, res: Response) => {
     try {
-      const { content, isImportant } = req.body
+      const body = getValidatedBody<{ content: string; isImportant: boolean }>(res)
 
       const [notice] = await db
         .insert(schema.notices)
-        .values({ content, isImportant })
+        .values({ content: body.content, isImportant: body.isImportant })
         .returning()
 
-      // If important, send email to all residents
-      if (isImportant) {
-        const residents = await db
-          .select({ email: schema.users.email, name: schema.users.name })
-          .from(schema.users)
-          .where(eq(schema.users.role, 'resident'))
-
-        for (const resident of residents) {
-          await sendImportantNoticeEmail(resident.email, resident.name, content)
-        }
+      if (body.isImportant) {
+        await notifyResidentsOfImportantNotice(body.content)
       }
 
       res.status(201).json({
@@ -118,12 +132,12 @@ router.patch(
   '/:id',
   authenticateToken,
   requireAdmin,
-  validateParams(updateNoticeSchema),
-  validateBody(updateNoticeSchema),
-  async (req: AuthenticatedRequest, res: Response) => {
+  validateParams(noticeParamsSchema),
+  validateBody(updateNoticeBodySchema),
+  async (req: Request, res: Response) => {
     try {
       const noticeId = Number(req.params.id)
-      const { content, isImportant } = req.body
+      const body = getValidatedBody<{ content?: string; isImportant?: boolean }>(res)
 
       const [existingNotice] = await db
         .select()
@@ -136,8 +150,8 @@ router.patch(
       }
 
       const updateData: Partial<typeof schema.notices.$inferInsert> = {}
-      if (content !== undefined) updateData.content = content
-      if (isImportant !== undefined) updateData.isImportant = isImportant
+      if (body.content !== undefined) updateData.content = body.content
+      if (body.isImportant !== undefined) updateData.isImportant = body.isImportant
 
       const [updated] = await db
         .update(schema.notices)
@@ -145,16 +159,9 @@ router.patch(
         .where(eq(schema.notices.id, noticeId))
         .returning()
 
-      // If newly marked as important, send emails
-      if (isImportant === true && existingNotice.isImportant === false) {
-        const residents = await db
-          .select({ email: schema.users.email, name: schema.users.name })
-          .from(schema.users)
-          .where(eq(schema.users.role, 'resident'))
-
-        for (const resident of residents) {
-          await sendImportantNoticeEmail(resident.email, resident.name, content || existingNotice.content)
-        }
+      // Newly marked important -> broadcast email
+      if (body.isImportant === true && existingNotice.isImportant === false) {
+        await notifyResidentsOfImportantNotice(body.content ?? existingNotice.content)
       }
 
       res.json({
@@ -174,7 +181,7 @@ router.delete(
   authenticateToken,
   requireAdmin,
   validateParams(noticeParamsSchema),
-  async (req: AuthenticatedRequest, res: Response) => {
+  async (req: Request, res: Response) => {
     try {
       const noticeId = Number(req.params.id)
 

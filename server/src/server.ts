@@ -4,6 +4,7 @@ import cors from 'cors'
 import helmet from 'helmet'
 import morgan from 'morgan'
 import cookieParser from 'cookie-parser'
+import multer from 'multer'
 import path from 'path'
 import { fileURLToPath } from 'url'
 
@@ -70,6 +71,16 @@ app.use(
     res: express.Response,
     next: express.NextFunction
   ) => {
+    // Upload errors (wrong type, too large) are client errors -> 400
+    if (err instanceof multer.MulterError || err.message.startsWith('Invalid file type')) {
+      const message =
+        err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE'
+          ? `File too large. Max size is ${env.MAX_FILE_SIZE / (1024 * 1024)}MB`
+          : err.message
+      res.status(400).json({ error: message })
+      return
+    }
+
     console.error(err.stack)
     res.status(500).json({
       error: 'Something went wrong!',
