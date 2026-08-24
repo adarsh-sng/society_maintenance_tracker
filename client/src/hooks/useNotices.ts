@@ -2,7 +2,7 @@
 
 import useSWR, { mutate } from 'swr'
 import { api } from '@/lib/api'
-import type { Notice, NoticeFilters, PaginatedResponse, CreateNoticeInput, UpdateNoticeInput } from '@/types'
+import type { Notice, NoticeListResponse, NoticeFilters, CreateNoticeInput, UpdateNoticeInput } from '@/types'
 
 const fetcher = (url: string) => api.get(url).then((res) => res.data)
 
@@ -18,14 +18,14 @@ function buildQueryString(params: Record<string, unknown>): string {
 
 export function useNotices(filters: NoticeFilters = {}) {
   const query = buildQueryString(filters)
-  const { data, error, isLoading, mutate: mutateNotices } = useSWR<PaginatedResponse<Notice>>(
+  const { data, error, isLoading, mutate: mutateNotices } = useSWR<NoticeListResponse>(
     `/notices?${query}`,
     fetcher,
     { revalidateOnFocus: false, dedupingInterval: 10000 }
   )
 
   return {
-    notices: data?.data ?? [],
+    notices: data?.notices ?? [],
     pagination: data?.pagination,
     isLoading,
     isError: !!error,

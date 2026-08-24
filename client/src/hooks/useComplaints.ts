@@ -2,7 +2,7 @@
 
 import useSWR, { mutate } from 'swr'
 import { api } from '@/lib/api'
-import type { Complaint, ComplaintFilters, PaginatedResponse, CreateComplaintInput, UpdateComplaintInput } from '@/types'
+import type { Complaint, ComplaintListResponse, ComplaintFilters, CreateComplaintInput, UpdateComplaintInput } from '@/types'
 
 const fetcher = (url: string) => api.get(url).then((res) => res.data)
 
@@ -18,14 +18,14 @@ function buildQueryString(params: Record<string, unknown>): string {
 
 export function useComplaints(filters: ComplaintFilters = {}) {
   const query = buildQueryString(filters)
-  const { data, error, isLoading, mutate: mutateComplaints } = useSWR<PaginatedResponse<Complaint>>(
+  const { data, error, isLoading, mutate: mutateComplaints } = useSWR<ComplaintListResponse>(
     `/complaints?${query}`,
     fetcher,
     { revalidateOnFocus: false, dedupingInterval: 5000 }
   )
 
   return {
-    complaints: data?.data ?? [],
+    complaints: data?.complaints ?? [],
     pagination: data?.pagination,
     isLoading,
     isError: !!error,

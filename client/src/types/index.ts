@@ -38,14 +38,21 @@ export interface Notice {
   createdAt: string
 }
 
-export interface PaginatedResponse<T> {
-  data: T[]
-  pagination: {
-    page: number
-    limit: number
-    total: number
-    totalPages: number
-  }
+export interface Pagination {
+  page: number
+  limit: number
+  total: number
+  totalPages: number
+}
+
+export interface ComplaintListResponse {
+  complaints: Complaint[]
+  pagination: Pagination
+}
+
+export interface NoticeListResponse {
+  notices: Notice[]
+  pagination: Pagination
 }
 
 export interface MetricsData {

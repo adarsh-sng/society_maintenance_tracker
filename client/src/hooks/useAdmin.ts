@@ -2,7 +2,7 @@
 
 import useSWR from 'swr'
 import { api } from '@/lib/api'
-import type { MetricsData, Complaint, ComplaintFilters, PaginatedResponse, UpdateComplaintInput } from '@/types'
+import type { MetricsData, Complaint, ComplaintListResponse, ComplaintFilters, UpdateComplaintInput } from '@/types'
 
 const fetcher = (url: string) => api.get(url).then((res) => res.data)
 
@@ -18,14 +18,14 @@ function buildQueryString(params: Record<string, unknown>): string {
 
 export function useAdminComplaints(filters: ComplaintFilters = {}) {
   const query = buildQueryString(filters)
-  const { data, error, isLoading, mutate } = useSWR<PaginatedResponse<Complaint>>(
+  const { data, error, isLoading, mutate } = useSWR<ComplaintListResponse>(
     `/admin/complaints?${query}`,
     fetcher,
     { revalidateOnFocus: false, dedupingInterval: 5000 }
   )
 
   return {
-    complaints: data?.data ?? [],
+    complaints: data?.complaints ?? [],
     pagination: data?.pagination,
     isLoading,
     isError: !!error,
