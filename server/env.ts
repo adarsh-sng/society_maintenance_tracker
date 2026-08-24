@@ -26,11 +26,13 @@ const envSchema = z.object({
   PORT: z.coerce.number().positive().default(3000),
   HOST: z.string().default('localhost'),
 
-   DATABASE_URL: z.string().startsWith('postgresql://'),
+  // Database
+  DATABASE_URL: z.string().startsWith('postgresql://'),
+  DATABASE_URL_TEST: z.string().startsWith('postgresql://').optional(),
   DATABASE_POOL_MIN: z.coerce.number().min(0).default(2),
   DATABASE_POOL_MAX: z.coerce.number().positive().default(10),
 
-    // CORS
+  // CORS
   CORS_ORIGIN: z
     .string()
     .or(z.array(z.string()))
@@ -41,6 +43,25 @@ const envSchema = z.object({
       return val
     })
     .default([]),
+
+  // JWT
+  JWT_SECRET: z.string().min(32),
+  JWT_EXPIRES_IN: z.string().default('7d'),
+  JWT_COOKIE_NAME: z.string().default('token'),
+
+  // Overdue detection
+  OVERDUE_DAYS: z.coerce.number().positive().default(7),
+
+  // Email (Ethereal for dev, SendGrid/Gmail for prod)
+  EMAIL_HOST: z.string().optional(),
+  EMAIL_PORT: z.coerce.number().optional(),
+  EMAIL_USER: z.string().optional(),
+  EMAIL_PASS: z.string().optional(),
+  EMAIL_FROM: z.string().email().optional(),
+
+  // File upload
+  UPLOAD_DIR: z.string().default('uploads'),
+  MAX_FILE_SIZE: z.coerce.number().positive().default(5 * 1024 * 1024),
 
   LOG_LEVEL: z
     .enum(['error', 'warn', 'info', 'debug', 'trace'])
