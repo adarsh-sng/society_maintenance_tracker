@@ -1,6 +1,8 @@
 import { db } from "./connection.ts";
 import * as schema from "./schema.ts";
-import { eq } from "drizzle-orm";
+import { hashPassword } from "../utils/password.ts";
+
+const SEED_PASSWORD = "password123";
 
 async function seed() {
   console.log("🌱 Starting Society Maintenance Tracker seed...");
@@ -13,7 +15,7 @@ async function seed() {
     await db.delete(schema.users);
 
     console.log("👤 Creating users (Residents and Admins)...");
-    const passwordHash = "super_secret_hashed_password_123";
+    const passwordHash = await hashPassword(SEED_PASSWORD);
 
     const [adminUser] = await db
       .insert(schema.users)
@@ -148,7 +150,7 @@ async function seed() {
     console.log(`- Complaints logged: ${adminDashboardView.length}`);
     console.log(`- Overdue Complaints: ${adminDashboardView.filter((c) => c.isOverdue).length}`);
 
-    console.log("\n🔑 Login Credentials:");
+    console.log("\n🔑 Login Credentials (password: password123):");
     console.log("Admin: admin@society.com");
     console.log("Resident: alice@society.com");
 

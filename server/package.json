@@ -21,6 +21,7 @@
     "@types/cookie-parser": "^1.4.10",
     "@types/multer": "^2.2.0",
     "@types/nodemailer": "^8.0.1",
+    "bcryptjs": "^3.0.3",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
     "custom-env": "^2.0.6",

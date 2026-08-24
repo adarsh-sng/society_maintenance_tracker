@@ -52,6 +52,9 @@ const envSchema = z.object({
   // Overdue detection
   OVERDUE_DAYS: z.coerce.number().positive().default(7),
 
+  // Password hashing
+  BCRYPT_ROUNDS: z.coerce.number().min(4).max(15).default(10),
+
   // Email (Ethereal for dev, SendGrid/Gmail for prod)
   EMAIL_HOST: z.string().optional(),
   EMAIL_PORT: z.coerce.number().optional(),
